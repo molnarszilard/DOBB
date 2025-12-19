@@ -1,13 +1,13 @@
 # Object-Based Camera Pose Estimation from a Single Object Detection and Gravity Vector
 
-In this repo, we provide the code for DOBB method. The DOBB code is mainly based on [Ultralytics YOLOV8.1.24](https://github.com/ultralytics/ultralytics). We will present a short description about how to train, evaluate, and run inference with DOBB. We also present a few addtional scripts used for data processing, e.g., creating the dataset and image rectification. The pretrained models are also available. Feel free to open an issue. Most pre- and postprocessing steps are or will be added to this repository.
+In this repo, we provide the code for DOBB method. The DOBB code is mainly based on [Ultralytics YOLOV8.1.24](https://github.com/ultralytics/ultralytics), please also cite their work if you are interested in our work. We will present a short description about how to train, evaluate, and run inference with DOBB. We also present a few addtional scripts used for data processing, e.g., creating the dataset and image rectification. The pretrained models are also available. Feel free to open an issue. Most pre- and postprocessing steps are or will be added to this repository.
 
 ## Abstract
 
 Recent results on pose estimation from ellipsoid-ellipse correspondences, which can be readily obtained from an object detector, allow a direct computation of the camera pose from object-level correspondences. Unfortunately, standard bounding boxes (either horizontal or minimal enclosing boxes) are symmetric, which introduces an inherent ambiguity in the correspondence, yielding multiple or even infinite solutions. Furthermore, the current state of the art requires minimum two such correspondences to provide sufficient constraints for camera rotation. Our contributions make object-based pose estimation efficient in practice: First, a novel object detection method is proposed, called Directional Object Bounding Box (DOBB), which is capable of detecting the object’s own direction together with its minimal enclosing box (OBB), yet independently from it, which not only breaks the symmetry of OBBs, but also provides the necessary additional geometric information for our pose estimation method. Second, a novel object-based robust camera pose estimation pipeline is proposed where a minimal solution can be obtained from a single object for outlier filtering when vertical direction and the object orientation w.r.t. that axis are known; followed by a closed-form least squares solution for multiple inlier objects to compute the camera pose. Comparative tests confirm the state-of-the-art performance of the proposed DOBB-based pose estimation method on the standard KITTI360 and 7-Scenes datasets.
 
 <p align="center">
-  <img src="assets/arch_horz3_with_rectified-image_examples_car.png"> <br>
+  <img src="assets/arch_horz3_with_rectified-image_examples_car.jpg"> <br>
 </p>
 
 ## Datasets

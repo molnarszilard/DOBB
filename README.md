@@ -17,8 +17,6 @@ We provide 2 datasets, formatted to be useable out-of-the-box with the DOBB mode
 Download with:
 
 [KITTI360 dataset]() for training, every 10th frame is included. First seven sequences are used for training, the last two sequences are used for testing, while training.
- 
-[KITTI360 dataset]() for further validations, every frame is oncluded from the last two sequences.
 
 [7-Scenes Chess dataset]()
 

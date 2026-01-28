@@ -14,11 +14,15 @@ Recent results on pose estimation from ellipsoid-ellipse correspondences, which 
 
 We provide 2 datasets, formatted to be useable out-of-the-box with the DOBB model.
 
-Download with:
+Download the dataset annotations from:
 
-[KITTI360 dataset]() for training, every 10th frame is included. First seven sequences are used for training, the last two sequences are used for testing, while training.
+[KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_10th_noimages.zip) for training, every 10th frame is included. First seven sequences are used for training, the last two sequences are used for testing, while training.
+ 
+[KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_all_val_noimages.zip) for further validations, every frame is oncluded from the last two sequences. 
 
-[7-Scenes Chess dataset]()
+[7-Scenes Chess dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/7scenes_chess_noimages.zip)
+
+You can have the images from the original datasets (create an issue if necessary, and we will see if we can host the whole dataset with images).
 
 You have to have your dataset prepared for training and evaluation. The dataset structure should look like this:
 
@@ -53,9 +57,9 @@ python -m pip install -e ./pyellcv
 
 ## Pre trained models
 
-DOBB model trained on the KITTI360 dataset: [model]()
+DOBB model trained on the KITTI360 dataset: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_best.pt)
 
-DOBB model trained on the 7-Scenes Chess dataset: [model]()
+DOBB model trained on the 7-Scenes Chess dataset: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/7sceneschess_best.pt)
 
 ## Evaluation
 

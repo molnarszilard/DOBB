@@ -1,15 +1,23 @@
 
-clear; clc;
-
+function abs_pose_lse_from_poseRecords(repoRoot, resultsDir, iouMatFile)
 %% ============================================================
 % CONFIGURATION
 %% ============================================================
-config = struct();
 
-config.repoRoot   = fileparts(mfilename('fullpath'));
-config.resultsDir = fullfile(config.repoRoot, "results");
+config = struct();
+config.repoRoot   = repoRoot;
+config.resultsDir = resultsDir;
+
 if ~exist(config.resultsDir,'dir'), mkdir(config.resultsDir); end
-config.iouMatFile = fullfile(config.resultsDir, "VehBuildMinimal_poseRecords_for_bestpose.mat");
+
+config.iouMatFile = iouMatFile;
+
+% config = struct();
+% 
+% config.repoRoot   = fileparts(mfilename('fullpath'));
+% config.resultsDir = fullfile(config.repoRoot, "results");
+% if ~exist(config.resultsDir,'dir'), mkdir(config.resultsDir); end
+% config.iouMatFile = fullfile(config.resultsDir, "VehBuildMinimal_poseRecords_for_bestpose.mat");
 
 addpath(genpath(fullfile(config.repoRoot, "Functions")));
 addpath(genpath(fullfile(config.repoRoot, "rotation_error")));
@@ -708,3 +716,4 @@ fprintf('[INFO] Number of images with < 2 inliers: %d\n', numImagesWithLessThanT
 
 disp('[DONE] Vehicle-build pose solver finished.');
 
+end

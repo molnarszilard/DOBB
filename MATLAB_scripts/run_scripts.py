@@ -1,6 +1,6 @@
 import subprocess
 
-scripts_dir = "/project/project/Leica2023/KITTI-360/Project3D_BBoxing/MATLAB_scripts"
+scripts_dir = "./"
 functionName = "pose_csv_to_poseRecords_minimal"
 seq = 9
 

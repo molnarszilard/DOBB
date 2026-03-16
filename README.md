@@ -1,6 +1,10 @@
 # Object-Based Camera Pose Estimation from a Single Object Detection and Gravity Vector
 
-In this repo, we provide the code for DOBB method. The DOBB code is mainly based on [Ultralytics YOLOV8.1.24](https://github.com/ultralytics/ultralytics), please also cite their work if you are interested in our work. We will present a short description about how to train, evaluate, and run inference with DOBB. We also present a few addtional scripts used for data processing, e.g., creating the dataset and image rectification. The pretrained models are also available. Feel free to open an issue. Most pre- and postprocessing steps are or will be added to this repository.
+In this repo, we provide the code for DOBB method. This code has 2 parts. The first part (DOBBp1) is the detector module, which detects the obejcts using their projected ellipse (this contains the class, the ellipse OBB coordinates, and the unit vector component for the direction angle). The second part (DOBBp2) computes the 3D object poses from these predictions.
+
+DOBBp1 is mainly based on [Ultralytics YOLOV8.1.24](https://github.com/ultralytics/ultralytics), please also cite their work if you are interested in our work. We will present a short description about how to train, evaluate, and run inference with DOBB. We also present a few addtional scripts used for data processing, e.g., creating the dataset and image rectification. The pretrained models are also available. This part is implemented in Python with PyTorch. The code for this part can be found in the 'ultralytics' folder.
+
+DOBBp2 computes the 3D poses from the data predicted by DOBBp1. This code is written in MATLAB. The code for this part can be found in the 'MATLAB_script' folder.
 
 ## Abstract
 
@@ -40,7 +44,7 @@ For each image, there should be a `.txt` file in the respectiv `label` folder (s
 
 Do not forget to have the required `yaml` file for your dataset (e.g., [config for KITTI360](ultralytics/cfg/datasets/kitti360_pose2d_veh_build.yaml)).
 
-## Environment setup
+## Environment setup for DOBBp1
 
 We recommend to use a conda environment for this code. Most necessary packages are in the `requirements.txt` file. Make sure NOT to install ultralytics from pip, as this repository contains direct modifications into that code, and installing it would create a confusing environment.
 
@@ -55,13 +59,13 @@ git clone --recursive https://gitlab.inria.fr/tangram/pyellcv.git
 python -m pip install -e ./pyellcv
 ```
 
-## Pre trained models
+## Pre trained models for DOBBp1
 
 DOBB model trained on the KITTI360 dataset: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_best.pt)
 
 DOBB model trained on the 7-Scenes Chess dataset: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/7sceneschess_best.pt)
 
-## Evaluation
+## Evaluation for DOBBp1
 
 For evaluating a model, use the `script_val.py`.
 
@@ -72,7 +76,7 @@ For pre/post processing the 7-Scenes Chess dataset, we based our work on [3D-Awa
 For pre/post processing the KITTI360 dataset, we based our work on [The KITTI-360 Dataset](https://github.com/autonomousvision/kitti360Scripts). We included a few necessary files in our repository for an easier setup, and we would like to highlight their work. If you are using this repository, you should also cite their work.
 
 
-## Training
+## Training for DOBBp1
 
 For training the DOBB method, you should run the `script_train_dobb.py` script. There you can choose the dataset (path to the config file), the representation, and the direction loss type.
 
@@ -81,13 +85,18 @@ For training the DOBB method, you should run the `script_train_dobb.py` script. 
 ### BibTeX
 
 ```bibtex
-@InProceedings{molnar2025isvc_dobb_objectbasedcamerapose,
-      author    = {Molnar, Szilard and Amstadt, Zita and Tamas, Levente and Kato, Zoltan},
-      booktitle = {{ISVC 2025 20th International Symposium on Visual Computing}},
-      title     = {{Object-Based Camera Pose Estimation from a Single Object Detection and Gravity Vector}},
-      year      = {2025},
-      note      = {Presented at the conference, waiting for the proceeding publication},
-    }
+@InProceedings{molnar2025isvc_dobb_objectbasedcamera,
+  author    = {Szilard Molnar and Zita Amstadt and Levente Tamas and Zoltan Kato},
+  booktitle = {{Advances in Visual Computing - 20th International Symposium, {ISVC} 2025, Las Vegas, NV, USA, November 17-19, 2025, Proceedings, Part {I}}},
+  title     = {{Object-Based Camera Pose Estimation from a Single Object Detection and Gravity Vector}},
+  year      = {2025},
+  editor    = {George Bebis and Jinwei Ye and Yuxiong Wang and Mina Konakovic{-}Lukovic and Nima Khademi Kalantari and Isaac Cho and Yalong Yang and Evanthia Dimara and Matthew Brehmer},
+  pages     = {205--218},
+  publisher = {Springer},
+  series    = {Lecture Notes in Computer Science},
+  volume    = {16396},
+  doi       = {10.1007/978-3-032-14492-8\_16},
+}
 ```
 
 ### Acknowledgments

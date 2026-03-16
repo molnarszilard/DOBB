@@ -1,13 +1,26 @@
-%% ===== CONFIG =====
+function pose_csv_to_poseRecords_minimal(repoRoot, dataRoot, resultsDir, sequences)
+
 config = struct();
-config.repoRoot   = fileparts(mfilename('fullpath'));
-config.dataRoot   = fullfile(config.repoRoot, "Kitti360_VehicBuild");
-config.resultsDir = fullfile(config.repoRoot, "results");
+config.repoRoot   = repoRoot;
+config.dataRoot   = dataRoot;
+config.resultsDir = resultsDir;
+
 if ~exist(config.resultsDir,'dir'), mkdir(config.resultsDir); end
 
 config.imageSubdir = "image_00";
+config.sequences  = sequences(:)';
 
-config.sequences = [ 9 ];  
+
+
+%% ===== CONFIG =====
+% config = struct();
+% config.repoRoot   = fileparts(mfilename('fullpath'));
+% config.dataRoot   = fullfile(config.repoRoot, "Kitti360_VehicBuild");
+% config.resultsDir = fullfile(config.repoRoot, "results");
+% if ~exist(config.resultsDir,'dir'), mkdir(config.resultsDir); end
+% 
+% config.imageSubdir = "image_00";
+% config.sequences = [ 9 ];  
 
 addpath(genpath(fullfile(config.repoRoot, "Functions")));
 addpath(genpath(fullfile(config.repoRoot, "rotation_error")));
@@ -481,5 +494,5 @@ poseRecordsMatPath = fullfile(config.resultsDir, 'VehBuildMinimal_poseRecords_fo
 save(poseRecordsMatPath, 'poseRecords', '-v7.3');
 fprintf('[OK] Compatible poseRecords MAT saved -> %s (rows=%d)\n', poseRecordsMatPath, numel(poseRecords));
 
-
+end
 

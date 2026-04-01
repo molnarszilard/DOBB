@@ -1,4 +1,7 @@
-""" Utility Functions for various geometric operations """
+""" Utility Functions for various geometric operations 
+Code is borrowed from
+https://stackoverflow.com/a/27496984
+"""
 import numpy as np
 import re
 import math

@@ -105,10 +105,20 @@ def process(filenames):
                 valid_key-=1
         camera_R = camera_tr[:3, :3]
         camera_T = camera_tr[:3, 3]
-        Rc2w_1D = np.reshape(camera_R,9)
+        # Rc2w_1D = np.reshape(camera_R,9)
         camera_K = camera.K
         camera_height = camera.height
         camera_width = camera.width
+        ### Simple 3 rotation decomposition
+        rotZ,rotY,rotX = geometry_utils.decompose_camera_rotation(camera_R,order='ZYX')
+        rotZwimu = np.asarray(Rotation.from_euler('Z', rotZ, degrees=True).as_matrix())
+        # rotYwimu = np.asarray(Rotation.from_euler('Y', rotY, degrees=True).as_matrix())
+        # rotXwimu = np.asarray(Rotation.from_euler('X', rotX, degrees=True).as_matrix())
+        # rotIMU = np.matmul(rotYwimu,rotXwimu)
+        # cam2world_norm = np.matmul(rotZwimu,rotIMU)
+
+        # camX1w=np.matmul(camera_R,np.array([1.0,0.0,0.0])) ### Camera unit vector in world
+        # phi=math.atan2(camX1w[1],camX1w[0]) ### Camera rotation in world (should be the same as rotZ)
         # current_imu_pose = poses[np.where(ts == valid_key)[0][0]]
         
         if not os.path.exists(os.path.join(kitti_image,filename[:-3]+'png')):
@@ -133,15 +143,6 @@ def process(filenames):
                 if counter==0: ### Reading and appending the header
                     row.append('directionX')
                     row.append('directionY')
-                    # row.append('Rc2w-11')
-                    # row.append('Rc2w-12')
-                    # row.append('Rc2w-13')
-                    # row.append('Rc2w-21')
-                    # row.append('Rc2w-22')
-                    # row.append('Rc2w-23')
-                    # row.append('Rc2w-31')
-                    # row.append('Rc2w-32')
-                    # row.append('Rc2w-33')
                     row.append('rotZ')
                     row.append('rotY')
                     row.append('rotX')
@@ -156,40 +157,7 @@ def process(filenames):
                     if not obj.name in chosen_classes:
                         continue
 
-                    ### Simple 3 rotation decomposition
-                    rotZ,rotY,rotX = geometry_utils.decompose_camera_rotation(camera_R,order='ZYX')
-                    rotZwimu = np.asarray(Rotation.from_euler('Z', rotZ, degrees=True).as_matrix())
-                    rotYwimu = np.asarray(Rotation.from_euler('Y', rotY, degrees=True).as_matrix())
-                    rotXwimu = np.asarray(Rotation.from_euler('X', rotX, degrees=True).as_matrix())
-                    rotIMU = np.matmul(rotYwimu,rotXwimu)
-                    cam2world_norm = np.matmul(rotZwimu,rotIMU)
-                    # Rc2w_1D = np.reshape(cam2world_norm,9)
-
-                    ### 4 rotation decomposition
-                    # rotX90 = np.asarray(Rotation.from_euler('X', 90, degrees=True).as_matrix())
-                    # cam2world2 = np.matmul(camera_R,rotX90)
-                    # rotZ,rotY,rotX = geometry_utils.decompose_camera_rotation(cam2world2,order='ZYX')
-                    # rotZwimu = np.asarray(Rotation.from_euler('Z', rotZ, degrees=True).as_matrix())
-                    # rotYwimu = np.asarray(Rotation.from_euler('Y', rotY, degrees=True).as_matrix())
-                    # rotXwimu = np.asarray(Rotation.from_euler('X', rotX, degrees=True).as_matrix())
-                    # rotIMU = np.matmul(rotYwimu,rotXwimu)
-                    # cam2world_norm = np.matmul(rotZwimu,rotIMU,rotX90.T)
-                    # Rc2w_1D = np.reshape(cam2world_norm,9)
                     
-                    ### Checking the matrix decomposition
-                    # unitX=np.array([1.0,0.0,0.0])
-                    # vecX1=rotIMU@unitX
-                    # vecX2=camera_R@unitX
-                    # ang=math.degrees(angle_between(vecX1,vecX2))
-                    # print(camera_R)
-                    # print(np.matmul(rotZwimu,rotIMU)@camera_R.T)
-                    # print(rotZ,rotY,rotX)
-                    # print(math.radians(rotZ),math.radians(rotY),math.radians(rotX))
-                    # print(vecX1,vecX2)
-                    # print(ang)
-
-                    camX1w=np.matmul(camera_R,np.array([1.0,0.0,0.0])) ### Camera unit vector in world
-                    phi=math.atan2(camX1w[1],camX1w[0]) ### Camera rotation in world (should be the same as rotZ)
 
                     objX1w=np.matmul(obj.R,np.array([1.0,0.0,0.0])) ### Object direction vector in world
                     objX1w[2]*=0 ### In 2d we need to drop the Z coordinate to the XY plane
@@ -208,37 +176,6 @@ def process(filenames):
                     rot_w = np.asarray(Rotation.from_euler('Z', -theta, degrees=False).as_matrix())
                     vert = (rot_w@obj.vertices.T).T
                     this_ellipse = (new_vC[0],new_vC[1],new_vC[2],(vert[:,1].max()-vert[:,1].min())/2, (vert[:,0].max()-vert[:,0].min())/2, (vert[:,2].max()-vert[:,2].min())/2,math.degrees(angle_dpt),0,0) # Translation, Scale, Rotation
-                    # print(this_ellipse)
-
-                    ### PLOTTING THE AXES ###
-                    # r0 = Rotation.identity()
-                    # ax = plt.figure().add_subplot(projection="3d", proj_type="ortho")
-                    # plot_rotated_axes(ax, r0, name="W", offset=(0, 0, 0))                    
-                    # plot_rotated_axes(ax, Rotation.from_matrix(camera_R), name="c_o", offset=(2, 0, 0))
-                    # plot_rotated_axes(ax, Rotation.from_matrix(np.matmul(camera_R,rotIMU)), name="", offset=(4, 0, 0))
-                    # plot_rotated_axes(ax, Rotation.from_matrix(np.matmul(rotIMU,camera_R)), name="", offset=(6, 0, 0))
-                    # plot_rotated_axes(ax, Rotation.from_matrix(np.matmul(camera_R,rotIMU.T)), name="", offset=(8, 0, 0))
-                    # plot_rotated_axes(ax, Rotation.from_matrix(np.matmul(rotIMU.T,camera_R)), name="", offset=(10, 0, 0))
-                    # # plot_rotated_axes(ax, Rotation.from_matrix(np.matmul(rotIMU,cam2world2)), name="c", offset=(6, 0, 0))
-                    # ### Plotting the original direction angle into the world on each coordinate system
-                    # ax.plot([0.0,0.0+objX1w[0]/np.max(abs(objX1w))], [0.0,objX1w[1]/np.max(abs(objX1w))], [0.0,objX1w[2]/np.max(abs(objX1w))], "#ff00ca")
-                    # # ax.plot([2.0,2.0+objX1w[0]/np.max(abs(objX1w))], [0.0,objX1w[1]/np.max(abs(objX1w))], [0.0,objX1w[2]/np.max(abs(objX1w))], "#ff00ca")
-                    # # ax.plot([4.0,4.0+objX1w[0]/np.max(abs(objX1w))], [0.0,objX1w[1]/np.max(abs(objX1w))], [0.0,objX1w[2]/np.max(abs(objX1w))], "#ff00ca")
-                    # # ax.plot([6.0,6.0+objX1w[0]/np.max(abs(objX1w))], [0.0,objX1w[1]/np.max(abs(objX1w))], [0.0,objX1w[2]/np.max(abs(objX1w))], "#ff00ca")
-                    # # ax.plot([8.0,8.0+objX1w[0]/np.max(abs(objX1w))], [0.0,objX1w[1]/np.max(abs(objX1w))], [0.0,objX1w[2]/np.max(abs(objX1w))], "#ff00ca")
-                    # # ax.plot([0.0,0.0+objXctow[0]/np.max(abs(objXctow))], [0.0,objXctow[1]/np.max(abs(objXctow))], [0.0,objXctow[2]/np.max(abs(objXctow))], "#ff8900")
-                    # # ax.plot([2.0,2.0+objXctow[0]/np.max(abs(objXctow))], [0.0,objXctow[1]/np.max(abs(objXctow))], [0.0,objXctow[2]/np.max(abs(objXctow))], "#ff8900")
-                    # # ax.plot([4.0,4.0+objXctow[0]/np.max(abs(objXctow))], [0.0,objXctow[1]/np.max(abs(objXctow))], [0.0,objXctow[2]/np.max(abs(objXctow))], "#ff8900")
-                    # # ax.plot([6.0,6.0+objXctow[0]/np.max(abs(objXctow))], [0.0,objXctow[1]/np.max(abs(objXctow))], [0.0,objXctow[2]/np.max(abs(objXctow))], "#ff8900")
-                    # # ax.plot([0.0,objXctow[0]/np.max(abs(objXctow))], [0.0,objXctow[1]/np.max(abs(objXctow))], [0.0,objXctow[2]/np.max(abs(objXctow))], "#ffa400")
-                    # loc = np.array([(6, 0, 0), (6, 0, 0)])
-                    # # ax.plot([6.0,6.0], [0.0,0.0], [0.0,-1.0], "#a400ff")
-                    # ax.set(xlim=(-1.25, 1.25), ylim=(-1.25, 1.25), zlim=(-1.25, 1.25))
-                    # ax.set(xticks=range(-1, 12), yticks=[-1, 0, 1], zticks=[-1, 0, 1])
-                    # ax.set_aspect("equal", adjustable="box")
-                    # ax.figure.set_size_inches(6, 5)
-                    # plt.tight_layout()
-                    # plt.show()   
 
                     ### ADD DIRECTION ELEMENTS TO CSV ###
                     # row.append(math.degrees(angle_dpt))

@@ -726,7 +726,7 @@ class v8OBBLoss(v8DetectionLoss):
             pred_dist = pred_dist.view(b, a, 4, c // 4).softmax(3).matmul(self.proj.type(pred_dist.dtype))
         return torch.cat((dist2rbox(pred_dist, pred_angle, anchor_points), pred_angle), dim=-1)
 
-class LossDirectionMahalanobis2(nn.Module):
+class LossDirectionMahalanobis(nn.Module):
     """Criterion class for computing training losses."""
 
     def __init__(self, sigma) -> None:
@@ -766,6 +766,60 @@ class LossDirectionMahalanobis2(nn.Module):
             return (gt_directions.type(orig_dtype) * 1000).sum()
         return direction_loss.mean()
 
+class HardNetLoss(nn.Module):
+    r"""
+    FROM L2D2 https://www.researchgate.net/publication/355340221_L2D2_Learnable_Line_Detector_and_Descriptor
+    and HarNet
+    """
+    def __init__(self):
+        super().__init__()
+
+    def distance_matrix_vector(self,f1, f2):
+        """Given batch of anchor descriptors and positive descriptors calculate distance matrix"""
+        MM = torch.mm(f1, torch.t(f1[f2]))
+        MM = (1 - MM) * 2
+        return MM
+    
+    #################################################### TRAINING LOSS HARDNET ####################################################
+    def forward(self,anchor, positive):
+        """HardNet margin loss - calculates loss based on distance matrix based on positive distance and closest negative distance.
+        """
+        # print('***************** function loss_RAL: anchor size'+str(anchor.size())+' *****************')
+        # print('***************** function loss_RAL: positive size'+str(positive.size())+' *****************')
+        ## In this case positive is not the vectors, but the list of elements, representing, the index of which element should be compared to which other one
+        # assert anchor.size() == positive.size(), "Input sizes between positive and negative must be equal."
+        assert len(anchor) == len(positive), "Input sizes between positive and negative must be equal."
+        assert anchor.dim() == 2, "Inputd must be a 2D matrix."
+        eps = 1e-8
+        dist_matrix = self.distance_matrix_vector(anchor, positive) + eps
+
+        #### Optimized
+        # pos1 = torch.diag(dist_matrix)
+        # dist_matrix.diagonal().add_(10)
+        # # dist_matrix += (dist_matrix.ge(0.000064).type(torch.float16) - 1.0) * (-10)
+        # dist_matrix += dist_matrix.lt(0.000064).type(torch.float16) * 10
+        # loss = 1 + torch.tanh(pos1 - torch.max(torch.min(dist_matrix, 1)[0],torch.min(dist_matrix, 0)[0]))
+        # loss = torch.mean(loss)
+
+
+        #### ORIGINAL
+        l = int(dist_matrix.size(0))
+        # positive item related to the anchor a_i
+        pos1 = torch.diag(dist_matrix)
+        dist_without_min_on_diag = dist_matrix + torch.eye(l,device=dist_matrix.device) * 10
+        mask = (dist_without_min_on_diag.ge(0.000064).float() - 1.0) * (-1)
+        mask = mask.type_as(dist_without_min_on_diag) * 10
+        dist_without_min_on_diag = dist_without_min_on_diag + mask
+        min_neg = torch.min(dist_without_min_on_diag, 1)[0]
+        min_neg2 = torch.min(dist_without_min_on_diag, 0)[0]
+        min_neg = torch.max(min_neg, min_neg2)
+        min_neg = min_neg
+        pos = pos1
+        loss = 1 + torch.tanh(pos - min_neg)
+        loss = torch.mean(loss)
+
+        return loss
+
 class v8DOBBLoss(v8DetectionLoss):
     def __init__(self, model):
         """
@@ -777,9 +831,11 @@ class v8DOBBLoss(v8DetectionLoss):
         self.assigner = RotatedTaskAlignedAssigner(topk=10, num_classes=self.nc, alpha=0.5, beta=6.0)
         self.bbox_loss = RotatedBboxLoss(self.reg_max - 1, use_dfl=self.use_dfl).to(self.device)
         self.sigmas=[self.hyp.direction_sigma1,self.hyp.direction_sigma2]
-        self.lossDirectionMahalanobis2 = LossDirectionMahalanobis2(sigma=self.sigmas)
+        self.lossDirectionMahalanobis = LossDirectionMahalanobis(sigma=self.sigmas)
+        if self.hyp.descriptors_size:
+            self.triplet_loss = HardNetLoss()
 
-    def preprocess(self, targets, batch_size, scale_tensor,dir_type="vector",nkpt=1):
+    def preprocess(self, targets, batch_size, scale_tensor,nkpt=1):
         """Preprocesses the target counts and matches with the input batch size to output a tensor."""
         if targets.shape[0] == 0:
             out = torch.zeros(batch_size, 0, 6+nkpt*3, device=self.device)
@@ -800,8 +856,12 @@ class v8DOBBLoss(v8DetectionLoss):
 
     def __call__(self, preds, batch):
         """Calculate and return the loss for the YOLO model."""
-        loss = torch.zeros(4, device=self.device)
-        feats, pred_angle, pred_direction0 = preds if isinstance(preds[0], list) else preds[1]
+        if self.hyp.descriptors_size:
+            loss = torch.zeros(5, device=self.device) # box, cls, dfl, dptloss, descriptorLoss
+            feats, pred_angle, pred_direction0, pred_descriptors = preds if isinstance(preds[0], list) else preds[1]
+        else:
+            loss = torch.zeros(4, device=self.device) # box, cls, dfl, dptloss
+            feats, pred_angle, pred_direction0 = preds if isinstance(preds[0], list) else preds[1]
         batch_size = pred_angle.shape[0]  # batch size, number of masks, mask height, mask width
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 4, self.nc), 1
@@ -824,7 +884,7 @@ class v8DOBBLoss(v8DetectionLoss):
             targets0 = torch.cat((batch_idx, batch["cls"].view(-1, 1), batch["bboxes"].view(-1, 5),batch["keypoints"].view(-1, batch["keypoints"].shape[1]*batch["keypoints"].shape[2])), 1)
             rw, rh = targets0[:, 4] * imgsz[0].item(), targets0[:, 5] * imgsz[1].item()
             targets0 = targets0[(rw >= 2) & (rh >= 2)]  # filter rboxes of tiny size to stabilize training
-            targets = self.preprocess(targets0.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]],dir_type=self.hyp.dir_type,nkpt=batch["keypoints"].shape[1])
+            targets = self.preprocess(targets0.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]],nkpt=batch["keypoints"].shape[1])
             # targets=targets.type(pred_distri.dtype)
             gt_labels, gt_bboxes, gt_directions = targets.split((1, 5, batch["keypoints"].shape[1]*batch["keypoints"].shape[2]), 2)  # cls, xywhr
             mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
@@ -843,7 +903,23 @@ class v8DOBBLoss(v8DetectionLoss):
         bboxes_for_assigner[..., :4] *= stride_tensor
         directions_for_assigner = pred_direction0.clone().detach()
         
-        _, target_bboxes, target_scores, fg_mask, target_gt_idx, target_directions = self.assigner(
+        description_mask_real = None
+        gt_ids = None
+        if self.hyp.descriptors_size:
+            unique_IDS, count_IDS = torch.unique(gt_labels, return_counts=True)
+            paired_IDS = unique_IDS[(count_IDS>1)*(unique_IDS!=0)]
+            description_mask_real = ((paired_IDS.view(-1, 1) - gt_labels.view(-1)).transpose(-1, -2) == 0).sum(dim=-1).view(gt_labels.shape) != 0
+            if gt_labels.shape[1]==0:
+                print("NO pairs")
+            gt_ids = gt_labels.clone()
+            gt_ids[description_mask_real!=True] = 0
+            subset_anchors = int(pred_scores.shape[1]/21*16) ## The predictions occupy 3 layers, but in the case of the descriptors the 16 dimensional vectors are already concatenated into 48D vectors (each 48D vector is then repeated)
+            ### So we do not want ot calcualte the descriptor loss on each element, only on the 16/21th part (1+2*2+4*4, where only the 4*4 part is relevant)
+            pred_descriptors = pred_descriptors[:,:,:subset_anchors]
+
+        gt_labels = (gt_labels/self.hyp.class_order).short()
+
+        target_labels, target_bboxes, target_scores, fg_mask, target_gt_idx, target_directions, target_ids, description_mask_anchor = self.assigner(
             pred_scores.detach().sigmoid(),
             bboxes_for_assigner.type(gt_bboxes.dtype),
             anchor_points * stride_tensor,
@@ -851,8 +927,31 @@ class v8DOBBLoss(v8DetectionLoss):
             gt_bboxes,
             mask_gt,
             gt_directions,
-            directions_for_assigner
+            directions_for_assigner,
+            gt_ids,
+            description_mask_real = description_mask_real
         )
+
+        if self.hyp.descriptors_size:
+            description_mask_anchor_flat = description_mask_anchor.flatten()
+            description_mask_anchor_flat_desc = description_mask_anchor[:,:pred_descriptors.shape[-1]].flatten()
+
+            gt_ids_flat = (target_ids[:,:subset_anchors,:]).flatten()
+            if gt_labels.shape[1]==0:
+                description_mask_anchor_flat=description_mask_anchor_flat[:subset_anchors*16/21]
+            gt_ids_flat = gt_ids_flat[description_mask_anchor_flat.long()>0]
+            filter_singles = torch.zeros_like(gt_ids_flat)
+            _, count_IDS3 = torch.unique(gt_ids_flat, return_counts=True)
+            ## If an ID occurs only once, there is nothing to compare it to, remove it
+            for ci in range(len(count_IDS3)):
+                if count_IDS3[ci]==1:
+                    filter_singles += gt_ids_flat==unique_IDS[ci]
+            gt_ids_flat = gt_ids_flat[filter_singles<1]
+            pds = pred_descriptors.shape
+            p_desc = pred_descriptors.transpose(2,1).reshape(pds[0]*pds[2],-1).type(torch.float16)
+            p_desc = p_desc[description_mask_anchor_flat_desc]
+            p_desc = p_desc[filter_singles<1]
+            B = gt_ids_flat.size(0)
         
         target_scores_sum = max(target_scores.sum(), 1)
 
@@ -869,15 +968,24 @@ class v8DOBBLoss(v8DetectionLoss):
             )
 
             ##### Calculate different losses
-            if self.hyp.direction_loss=="mahalanobis2":
-                loss[3] = self.lossDirectionMahalanobis2(pred_directions_n[fg_mask], target_directions_n[fg_mask][...,:2])
+            if self.hyp.direction_loss=="mahalanobis":
+                loss[3] = self.lossDirectionMahalanobis(pred_directions_n[fg_mask], target_directions_n[fg_mask][...,:2])
             else:
-                print("Wrong loss is supplied: %s. Possible options: mahalanobis2"%(self.hyp.direction_loss))
+                print("Wrong loss is supplied: %s. Possible options: mahalanobis"%(self.hyp.direction_loss))
+
+            ### Triplet loss, HardNet
+            if self.hyp.descriptors_size:
+                if len(p_desc)>0 and len(gt_ids_flat)>0:
+                    loss[4] = self.triplet_loss(p_desc, ((gt_ids_flat.view(1, B) == gt_ids_flat.view(B, 1)) & ~(torch.eye(B, dtype=torch.bool).to(device=gt_ids_flat.device))).type(torch.uint8).argmax(dim=-1))
+                else:
+                    loss[4] += (pred_descriptors * 0).sum()
                 
         else:
             loss[0] += (pred_angle * 0).sum()
             loss[2] += (pred_angle * 0).sum()
             loss[3] += (pred_angle * 0).sum()
+            if self.hyp.descriptors_size:
+                loss[4] += (pred_descriptors * 0).sum()
         if loss.isnan().any():
             print("Loss is nan")
 
@@ -888,6 +996,12 @@ class v8DOBBLoss(v8DetectionLoss):
             loss[3] *= self.hyp.dir_gain * self.hyp.cepoch/self.hyp.epochs
         else:
             loss[3] *= self.hyp.dir_gain
+        
+        if self.hyp.descriptors_size:
+            if self.hyp.cepoch>=0:
+                loss[3] *= self.hyp.descgain * self.hyp.cepoch/self.hyp.epochs
+            else:
+                loss[3] *= self.hyp.descgain
 
         return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl, direction)
 

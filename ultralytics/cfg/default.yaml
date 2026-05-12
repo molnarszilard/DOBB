@@ -103,8 +103,12 @@ dir_gain: 20 # (float) direction point loss gain
 cepoch: -1 # current epoch
 direction_sigma1: 0.9 # long axis ratio at direction loss
 direction_sigma2: 0.1 # short axis ratio at direction loss
-direction_loss: mahalanobis2 # loss of direction point (Options: mahalanobis2)
+direction_loss: mahalanobis # loss of direction point (Options: mahalanobis)
+descgain: 20 # gain forthe triplet loss
+list_batches: False # Do you have a list that describes the batches?
+descriptors_size: 0 # calculate the object descriptors
 dir_type: vector # direction type (Options: vector)
+class_order: 10000000 # the class id in the annotations can contain more information than the class itself, it has to be divided by this value to get the class ID itself (if the ids are equal to the class ids intended to be trained with, set this to 1)
 leadingEdge: False # Is the Leading edge of the BB the direction
 seg_bb_scale: 1.5 # scale the OBB bounding box to enclose the segmentation mask
 label_smoothing: 0.0 # (float) label smoothing (fraction)

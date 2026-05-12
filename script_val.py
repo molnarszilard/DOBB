@@ -2,8 +2,9 @@ from ultralytics import YOLO
 
 DIRTYPE = "vector" # Direction type is a vector
 
-# loss of direction point (Options: mahalanobis,euclidean,vector,probiou,angle,kl,gma)
-DIRLOSS = "mahalanobis2" ## for vwector
+DIRLOSS = "mahalanobis"
+
+DESC = 16 # descriptor vector size: DESC*3, 
 
 # Load a model
 model = YOLO('runs/dobb/train/weights/best.pt')
@@ -16,5 +17,8 @@ metrics = model.val(
     task='dobb',
     batch=4,
     imgsz=1408,
-    dir_type=DIRTYPE
+    dir_type=DIRTYPE,
+    descriptors_size=DESC,
+    class_order = 10000000,
+    list_batches = True,
 )

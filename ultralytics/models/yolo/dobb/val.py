@@ -83,6 +83,10 @@ class DOBBValidator(DetectionValidator):
             npr = len(pred)
             pbatch = self._prepare_batch(si, batch)
             cls, bbox, kpts = pbatch.pop("cls"), pbatch.pop("bbox"), pbatch.pop("keypoints")
+            # this validation does not evaluate descriptors, drop them
+            pred = pred[:,:7+kpts.shape[1]+1]
+            for cl_i in range(len(cls)):
+                cls[cl_i]=int(cls[cl_i]/self.args.class_order)
             nl = len(cls)
             stat = dict(
                 tp=torch.zeros(npr, self.niou, dtype=torch.bool, device=self.device),

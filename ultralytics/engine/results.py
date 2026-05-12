@@ -94,7 +94,7 @@ class Results(SimpleClass):
         tojson(normalize=False): Converts detection results to JSON format.
     """
 
-    def __init__(self, orig_img, path, names, boxes=None, masks=None, probs=None, keypoints=None, obb=None, dobb=None, dir_type="vector") -> None:
+    def __init__(self, orig_img, path, names, boxes=None, masks=None, probs=None, keypoints=None, obb=None, dobb=None, dir_type="vector", desc_vector_length=0) -> None:
         """
         Initialize the Results class.
 
@@ -116,13 +116,14 @@ class Results(SimpleClass):
         self.probs = Probs(probs) if probs is not None else None
         self.keypoints = Keypoints(keypoints, self.orig_shape) if keypoints is not None else None
         self.obb = OBB(obb, self.orig_shape) if obb is not None else None
-        self.dobb = DOBB(dobb, self.orig_shape) if dobb is not None else None
+        self.dobb = DOBB(dobb, self.orig_shape, desc_vector_length=desc_vector_length) if dobb is not None else None
         self.speed = {"preprocess": None, "inference": None, "postprocess": None}  # milliseconds per image
         self.names = names
         self.path = path
         self.save_dir = None
         self._keys = "boxes", "masks", "probs", "keypoints", "obb", "dobb"
         self.dir_type = dir_type
+        self.desc_vector_length = desc_vector_length
 
     def __getitem__(self, idx):
         """Return a Results object for the specified index."""
@@ -146,7 +147,7 @@ class Results(SimpleClass):
         if obb is not None:
             self.obb = OBB(obb, self.orig_shape)
         if dobb is not None:
-            self.dobb = DOBB(dobb, self.orig_shape)
+            self.dobb = DOBB(dobb, self.orig_shape, desc_vector_length=self.desc_vector_length)
 
     def _apply(self, fn, *args, **kwargs):
         """
@@ -361,10 +362,14 @@ class Results(SimpleClass):
         elif boxes:
             # Detect/segment/pose
             for j, d in enumerate(boxes):
+                d.desc_vector_length = boxes.desc_vector_length
                 c, conf, id = int(d.cls), float(d.conf), None if d.id is None else int(d.id.item())
                 if is_dobb:
                     if self.dir_type in ["vector"]:
-                        line = (c, *(d.xyxyxyxyn.view(-1)), *(d.directionVector.view(-1)))
+                        if boxes.desc_vector_length:
+                            line = (c, *(d.xyxyxyxyn.view(-1)), *(d.directionVector.view(-1)), *(d.descriptors.view(-1)))
+                        else:
+                            line = (c, *(d.xyxyxyxyn.view(-1)), *(d.directionVector.view(-1)))
                     else:
                         line = (c, *(d.xyxyxyxyn.view(-1)))
                 else:
@@ -784,7 +789,7 @@ class DOBB(BaseTensor):
         to(*args, **kwargs): Move the object to the specified device.
     """
 
-    def __init__(self, boxes, orig_shape) -> None:
+    def __init__(self, boxes, orig_shape, desc_vector_length = 0) -> None:
         """Initialize the Boxes class."""
         if boxes.ndim == 1:
             boxes = boxes[None, :]
@@ -794,6 +799,7 @@ class DOBB(BaseTensor):
         self.is_track = False
         self.orig_shape = orig_shape
         self.dir_dim = [1,3]
+        self.desc_vector_length = desc_vector_length
 
     @property
     def xywhr(self):
@@ -819,6 +825,11 @@ class DOBB(BaseTensor):
         # dx /= self.orig_shape[1]
         # dy /= self.orig_shape[0]
         return torch.cat((self.data[:,5],self.data[:,6]),-1)
+    
+    @property
+    def descriptors(self):
+        """Return the descriptor vector."""
+        return self.data[:,7:7+self.desc_vector_length]
 
     @property
     def conf(self):

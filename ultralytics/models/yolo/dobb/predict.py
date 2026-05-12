@@ -48,12 +48,17 @@ class DOBBPredictor(DetectionPredictor):
             rboxes = ops.regularize_rboxes(torch.cat([pred[:, :4], pred[:, 6:7]], dim=-1))
             rboxes[:, :4] = ops.scale_boxes(img.shape[2:], rboxes[:, :4], orig_img.shape, xywh=True)
             # xywh, r, conf, cls, 
+
+            desc_vector_length = self.args.descriptors_size*3
             
             if self.args.dir_type in ['vector']:
-                pred_dps = pred[:,pred.shape[-1]-2:pred.shape[-1]]
+                pred_dps = pred[:,pred.shape[-1]-desc_vector_length-2:pred.shape[-1]-desc_vector_length]
             else:
                 pred_dps = pred[:,-1].unsqueeze(-1)
-            dobb = torch.cat([rboxes, pred_dps, pred[:, 4:6], ], dim=-1)
+            descriptors = None
+            if desc_vector_length:
+                descriptors = pred[:,-desc_vector_length:]
+            dobb = torch.cat([rboxes, pred_dps, descriptors, pred[:, 4:6], ], dim=-1)
             
-            results.append(Results(orig_img, path=img_path, names=self.model.names, dobb=dobb, dir_type=self.args.dir_type))
+            results.append(Results(orig_img, path=img_path, names=self.model.names, dobb=dobb, dir_type=self.args.dir_type, desc_vector_length = desc_vector_length))
         return results

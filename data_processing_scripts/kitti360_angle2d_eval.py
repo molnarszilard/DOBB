@@ -42,8 +42,6 @@ parser.add_argument('--no_matching', default=False, action='store_true',
                     help='do you want to plot the 3D BB in the image?')
 args = parser.parse_args()
 
-N = 1000
-
 seq_number = [int(s) for s in re.findall(r'\d+',args.sequence)][-1]
 train_nr = [int(s) for s in re.findall(r'\d+',args.labels)][0]
 

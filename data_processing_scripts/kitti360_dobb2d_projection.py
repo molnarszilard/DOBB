@@ -1,4 +1,5 @@
-#Python code to create the DOBB dataset from Kitti360. You have to run this file for each sequences.
+
+#Python code to create teh DOBB dataset from Kitti360 
 # importing the required modules
 import os
 import cv2
@@ -40,22 +41,23 @@ parser.add_argument('--plotBB', default=False, action='store_true',
                     help='do you want to plot the 3D BB in the image?')
 args = parser.parse_args()
 
-N = 1000
-chosen_classes = ['car','truck','bus','caravan','trailer','train','building']
+N = 10000000
+max_instance = 0
+all_classes = ['building','pole','traffic light','trafficSign','person','rider','car','truck','bus','caravan','trailer','train','motorcycle','bicycle','garage','stop','smallpole','lamp','trash bin','vending machine']
+chosen_classes = ['car','trafficSign']
+# chosen_classes = all_classes
 seq_number = [int(s) for s in re.findall(r'\d+',args.sequence)][-1]
 
-kitti_image = os.path.join(args.kitti_root,'data_2d_raw',args.sequence,args.cameraID,'data_rect')
+# kitti_image = os.path.join(args.kitti_root,'data_2d_raw',args.sequence,args.cameraID,'data_rect')
+kitti_image = os.path.join(args.kitti_root,'data_2d_raw',args.sequence,args.cameraID)
 ### Creating Output structure
 base=os.path.join(args.result_folder,args.sequence)
-new_images='images/'
 new_plots='plots'
 new_labels='labels/'
 csv_labels_folder=os.path.join(args.cameraID,args.csv_labels_folder)
 new_csv_labels_folder=os.path.join(args.cameraID,args.new_csv_labels_folder)
 if not os.path.exists(os.path.join(base,new_labels)):
     os.makedirs(os.path.join(base,new_labels))
-if not os.path.exists(os.path.join(base,new_images)):
-    os.makedirs(os.path.join(base,new_images))
 if not os.path.exists(os.path.join(base,new_plots)):
     os.makedirs(os.path.join(base,new_plots))
 if not os.path.exists(os.path.join(base,new_csv_labels_folder)):
@@ -75,7 +77,8 @@ if len(csv_labels)<1:
     exit()
 
 ### Reading 3D bounding boxes
-kitti_3dbboxes = os.path.join(args.kitti_root,'data_3d_bboxes')
+# kitti_3dbboxes = os.path.join(args.kitti_root,'data_3d_bboxes')
+kitti_3dbboxes = os.path.join(args.kitti_root,'data_3d_bboxes_new')
 annotation3D = Annotation3D(kitti_3dbboxes, args.sequence)
 camera = Camera(root_dir=args.kitti_root, seq=args.sequence)
 [ts, poses] = loadPoses(os.path.join(args.kitti_root,'data_poses',args.sequence, 'poses.txt'))
@@ -84,6 +87,7 @@ cam2velo = np.array([[0.04307104361, -0.08829286498, 0.995162929, 0.8043914418],
 cam2imu = np.array([[0.0371783278,-0.0986182135,0.9944306009,1.5752681039],[0.9992675562,-0.0053553387,-0.0378902567,0.0043914093],[0.0090621821,0.9951109327,0.0983468786,-0.6500000000]])
 
 def process(filenames):
+    global max_instance
     for filename in filenames:
         frame = int(os.path.splitext(filename)[0])
         # if frame%10:
@@ -105,32 +109,34 @@ def process(filenames):
                 valid_key-=1
         camera_R = camera_tr[:3, :3]
         camera_T = camera_tr[:3, 3]
-        # Rc2w_1D = np.reshape(camera_R,9)
+        Rc2w_1D = np.reshape(camera_R,9)
         camera_K = camera.K
         camera_height = camera.height
         camera_width = camera.width
+        # current_imu_pose = poses[np.where(ts == valid_key)[0][0]]
+
         ### Simple 3 rotation decomposition
         rotZ,rotY,rotX = geometry_utils.decompose_camera_rotation(camera_R,order='ZYX')
         rotZwimu = np.asarray(Rotation.from_euler('Z', rotZ, degrees=True).as_matrix())
-        # rotYwimu = np.asarray(Rotation.from_euler('Y', rotY, degrees=True).as_matrix())
-        # rotXwimu = np.asarray(Rotation.from_euler('X', rotX, degrees=True).as_matrix())
-        # rotIMU = np.matmul(rotYwimu,rotXwimu)
-        # cam2world_norm = np.matmul(rotZwimu,rotIMU)
+        rotYwimu = np.asarray(Rotation.from_euler('Y', rotY, degrees=True).as_matrix())
+        rotXwimu = np.asarray(Rotation.from_euler('X', rotX, degrees=True).as_matrix())
+        rotIMU = np.matmul(rotYwimu,rotXwimu)
+        cam2world_norm = np.matmul(rotZwimu,rotIMU)
 
-        # camX1w=np.matmul(camera_R,np.array([1.0,0.0,0.0])) ### Camera unit vector in world
-        # phi=math.atan2(camX1w[1],camX1w[0]) ### Camera rotation in world (should be the same as rotZ)
-        # current_imu_pose = poses[np.where(ts == valid_key)[0][0]]
+        camX1w=np.matmul(camera_R,np.array([1.0,0.0,0.0])) ### Camera unit vector in world
+        phi=math.atan2(camX1w[1],camX1w[0]) ### Camera rotation in world (should be the same as rotZ)
         
         if not os.path.exists(os.path.join(kitti_image,filename[:-3]+'png')):
-            exit()
+            if not os.path.exists(os.path.join(kitti_image,filename[:-3]+'jpg')):
+                exit()
+            else:
+                img_rgb = cv2.imread(os.path.join(kitti_image,filename[:-3]+'jpg'))
         else:
             img_rgb = cv2.imread(os.path.join(kitti_image,filename[:-3]+'png'))
         H,W = img_rgb.shape[:2]
         new_label_path = os.path.join(base,new_labels,'s'+f'{seq_number:02d}'+'_'+filename[:-3]+'txt')
-        new_image_path = os.path.join(base,new_images,'s'+f'{seq_number:02d}'+'_'+filename[:-3]+'png')
         new_plot_path = os.path.join(base,new_plots,'s'+f'{seq_number:02d}'+'_'+filename[:-3]+'png')
-        new_csv_path = os.path.join(base,new_csv_labels_folder,filename)
-        cv2.imwrite(new_image_path,img_rgb)
+        new_csv_path = os.path.join(base,new_csv_labels_folder,'s'+f'{seq_number:02d}'+'_'+filename)
         fl = open(new_label_path, "w")
         
         new_csv = []
@@ -146,43 +152,34 @@ def process(filenames):
                     row.append('rotZ')
                     row.append('rotY')
                     row.append('rotX')
-
                     new_csv.append(row)
                     continue
                 
                 i_id = int(float(row[4]))
                 s_id = int(float(row[3]))
+                if s_id == 13:
+                    s_id = 26
+                if s_id == 24:
+                    s_id = 20
+                if i_id>max_instance:
+                    max_instance=i_id
                 obj = annotation3D(s_id, i_id, frame)
                 if obj:
+                    if obj.name == 'traffic sign':
+                        obj.name = 'trafficSign'
                     if not obj.name in chosen_classes:
                         continue
-
-                    
 
                     objX1w=np.matmul(obj.R,np.array([1.0,0.0,0.0])) ### Object direction vector in world
                     objX1w[2]*=0 ### In 2d we need to drop the Z coordinate to the XY plane
                     objX1w = utils.unit_vector(objX1w) ### obj.R has scaling built in, let's create a unit vector
                     theta=math.atan2(objX1w[1],objX1w[0]) ### Object rotation in world around the Z coordinate
                     objX1c=np.matmul(rotZwimu.T,objX1w) ### Object direction vector in camera (same Z)
-                    # print(objX1c)
                     objX1c = utils.unit_vector(objX1c)
-                    angle_dpt = math.atan2(objX1c[1],objX1c[0]) #alpha, this is the direction angle, that the DOBB needs to learn
-
-                    ### Print the ellipsoid coordinates for the MATLAB plotting
-                    ### distance = math.sqrt((obj.T[0]-camera_tr[0,-1])**2+(obj.T[1]-camera_tr[1,-1])**2)
-                    rot = np.asarray(Rotation.from_euler('Z', rotZ+90, degrees=True).as_matrix()) ## The coordinates needs to be in Velodyne coordinates, where Y is forward
-                    new_vW=obj.T-camera_T
-                    new_vC=rot.T@new_vW+[0.79,0.3,-0.18]
-                    rot_w = np.asarray(Rotation.from_euler('Z', -theta, degrees=False).as_matrix())
-                    vert = (rot_w@obj.vertices.T).T
-                    this_ellipse = (new_vC[0],new_vC[1],new_vC[2],(vert[:,1].max()-vert[:,1].min())/2, (vert[:,0].max()-vert[:,0].min())/2, (vert[:,2].max()-vert[:,2].min())/2,math.degrees(angle_dpt),0,0) # Translation, Scale, Rotation
 
                     ### ADD DIRECTION ELEMENTS TO CSV ###
-                    # row.append(math.degrees(angle_dpt))
                     for elem in objX1c[:2]:
                         row.append(elem)
-                    # for elem in Rc2w_1D:
-                    #     row.append(elem)
                     row.append(math.radians(rotZ))
                     row.append(math.radians(rotY))
                     row.append(math.radians(rotX))
@@ -196,21 +193,25 @@ def process(filenames):
                     cy = float(row[12])
                     angle_obb = math.atan2(R[1,0],R[0,0])
                     corners = utils.xywhr2xyxyxyxy(np.array([cx,cy,w,h,angle_obb]))
+                    corners /= [W,H]
+                    corners = np.minimum(np.ones_like(corners),corners)
+                    corners = np.maximum(np.zeros_like(corners),corners)
                     
-                    if obj.name=='building':
-                        object_class = 1
-                    else:
-                        object_class = 0
-                    fl.write("%d %f %f %f %f %f %f %f %f %f %f\n"%(object_class,corners[0,0]/W,corners[0,1]/H,corners[1,0]/W,corners[1,1]/H,corners[2,0]/W,corners[2,1]/H,corners[3,0]/W,corners[3,1]/H,objX1c[0],objX1c[1]))
+                    class_to_learn = chosen_classes.index(obj.name)
+                    object_class = class_to_learn
+                    object_class*=N
+                    object_class+=seq_number*(N/100)
+                    object_class+=s_id*(N/10000)
+                    object_class+=i_id
+                    fl.write("%d %f %f %f %f %f %f %f %f %f %f\n"%(object_class,corners[0,0],corners[0,1],corners[1,0],corners[1,1],corners[2,0],corners[2,1],corners[3,0],corners[3,1],objX1c[0],objX1c[1]))
                     if not one_object:
                         a=min(w,h)/2
                         dx=cx+a*objX1c[0] ### Using pixels the rotation is inverse (angle_dpt is calculated around Z, while in this case it is around -Z)
                         dy=cy+a*(-objX1c[1])
                         # one_object=True ### This is in the case when we want to plot only the first object into an image
-                        img_rgb = cv2.ellipse(img_rgb, (int(cx),int(cy)), (int(w/2),int(h/2)), math.degrees(angle_obb), 0, 360, utils.get_color('orange'), 2)
+                        img_rgb = cv2.ellipse(img_rgb, (int(cx),int(cy)), (int(w/2),int(h/2)), math.degrees(angle_obb), 0, 360, utils.get_color(class_to_learn), 2)
                         img_rgb = cv2.arrowedLine(img_rgb, (int(cx),int(cy)), (int(dx),int(dy)), utils.get_color('red'), 2)
-                    # Tr_obj2world = np.array([[obj.R[0,0],obj.R[0,1],obj.R[0,1],obj.T[0]],[obj.R[1,0],obj.R[1,1],obj.R[1,1],obj.T[1]],[obj.R[2,0],obj.R[2,1],obj.R[2,1],obj.T[2]],[0.0,0.0,0.0,1.0]])
-
+ 
                     ### PLOTTING 3D BB in the image
                     if args.plotBB:
                         new_vertices_cam = np.zeros_like(obj.vertices)
@@ -248,7 +249,6 @@ def process(filenames):
         df = pd.DataFrame(np.asarray(new_csv))
         df.to_csv(new_csv_path,header=False, index=False, sep=';', quotechar='|')
         fl.close()
-        cv2.imwrite(new_plot_path,img_rgb)
 
 def main():     
     if args.multiprocess==1:
@@ -260,6 +260,7 @@ def main():
         for t in range(threads):
             p = Process(target=process, name='thread%d'%(t), args=(batches[t],))
             p.start()
+    print("Max instances: %d"%(max_instance))
       
 if __name__ == "__main__": 
     main()

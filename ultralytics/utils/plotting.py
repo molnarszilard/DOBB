@@ -596,18 +596,19 @@ class Annotator:
 
 @TryExcept()  # known issue https://github.com/ultralytics/yolov5/issues/5395
 @plt_settings()
-def plot_labels(boxes, cls, names=(), save_dir=Path(""), on_plot=None):
+def plot_labels(boxes, cls, names=(), save_dir=Path(""), on_plot=None, class_order=1):
     """Plot training labels including class histograms and box statistics."""
     import pandas as pd
     import seaborn as sn
 
+    cls_adjusted = (cls/class_order).astype(int)
     # Filter matplotlib>=3.7.2 warning and Seaborn use_inf and is_categorical FutureWarnings
     warnings.filterwarnings("ignore", category=UserWarning, message="The figure layout has changed to tight")
     warnings.filterwarnings("ignore", category=FutureWarning)
 
     # Plot dataset labels
     LOGGER.info(f"Plotting labels to {save_dir / 'labels.jpg'}... ")
-    nc = int(cls.max() + 1)  # number of classes
+    nc = int(cls_adjusted.max() + 1)  # number of classes
     boxes = boxes[:1000000]  # limit to 1M boxes
     x = pd.DataFrame(boxes, columns=["x", "y", "width", "height"])
 
@@ -618,7 +619,7 @@ def plot_labels(boxes, cls, names=(), save_dir=Path(""), on_plot=None):
 
     # Matplotlib labels
     ax = plt.subplots(2, 2, figsize=(8, 8), tight_layout=True)[1].ravel()
-    y = ax[0].hist(cls, bins=np.linspace(0, nc, nc + 1) - 0.5, rwidth=0.8)
+    y = ax[0].hist(cls_adjusted, bins=np.linspace(0, nc, nc + 1) - 0.5, rwidth=0.8)
     for i in range(nc):
         y[2].patches[i].set_color([x / 255 for x in colors(i)])
     ax[0].set_ylabel("instances")
@@ -634,8 +635,8 @@ def plot_labels(boxes, cls, names=(), save_dir=Path(""), on_plot=None):
     boxes[:, 0:2] = 0.5  # center
     boxes = ops.xywh2xyxy(boxes) * 1000
     img = Image.fromarray(np.ones((1000, 1000, 3), dtype=np.uint8) * 255)
-    for cls, box in zip(cls[:500], boxes[:500]):
-        ImageDraw.Draw(img).rectangle(box, width=1, outline=colors(cls))  # plot
+    for cls, box in zip(cls_adjusted[:500], boxes[:500]):
+        ImageDraw.Draw(img).rectangle(box, width=1, outline=colors(cls_adjusted))  # plot
     ax[1].imshow(img)
     ax[1].axis("off")
 

@@ -22,7 +22,7 @@ Download the dataset annotations from:
 
 [KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_10th_noimages.zip) for training, every 10th frame is included. First seven sequences are used for training, the last two sequences are used for testing, while training.
  
-[KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_all_val_noimages.zip) for further validations, every frame is oncluded from the last two sequences. 
+[KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_all_val_noimages.zip) for further validations, every frame is included from the last two sequences. 
 
 [7-Scenes Chess dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/7scenes_chess_noimages.zip)
 
@@ -65,9 +65,7 @@ DOBB model trained on the KITTI360 dataset: [model](http://rocon.utcluj.ro/~leve
 
 DOBB model trained on the 7-Scenes Chess dataset: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/7sceneschess_best.pt)
 
-## Evaluation for DOBBp1
-
-For evaluating a model, use the `script_val.py`.
+For evaluating a model, and compute the mAP values, use the `script_val.py`.
 
 ## Dataset pre/post processing
 
@@ -79,6 +77,29 @@ For pre/post processing the KITTI360 dataset, we based our work on [The KITTI-36
 ## Training for DOBBp1
 
 For training the DOBB method, you should run the `script_train_dobb.py` script. There you can choose the dataset (path to the config file), the representation, and the direction loss type.
+
+# Camera Pose Estimation from Single Directional Object Detection, Gravity Vector, and Object Correspondences
+
+The previous model was extended with descriptor estimation.
+
+To turn on the descriptor estimation, set the `descriptors_size` variable to 16, the `descgain` to 20, `class_order` to 10000000 and reformat your dataset in such a way, that the class label in each annotation becomes more of a special key composed as follows: (2 digit for class, 2 digit for sequence, 2 digit for semID, 3 digit for instance   --- class and semID not the same), in other words:
+
+```
+class=key/10000000
+sequence=(key%10000000)/100000
+semanticID=(key%100000)/1000
+instanceID=key%1000
+```
+
+For training, you should have a `used_images_train.txt` in the root of your dataset folder, containing the list of images that you choose to be part of the training, these have to be in a specific order (you can have such a file for validation as well, but not necessary). When compiling the list of images, make sure, that a unique object does not appear more than 2 times in any batch. The order respects the batches (the first 16 images will be part of the first batch). Also turn off most of the image augmentation flags at training (e.g., mosaic, flip).
+
+In the `data_processing_scripts`, we provide the scripts to evaluate the local pairwise descriptors and the global descriptors: `kitti360_descriptor_eval_pairwise.py` and `kitti360_descriptor_eval_global.py`, respectively.
+
+In this paper, our additional contribution was to modify the original KITTI360 dataset in such a way, that the `traffic sign` objectrs are corrected to be oriented correctly, and to be more fitted to the objects themselves.
+
+[NEW KITTI360 dataset](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_dobb_descriptors.zip): includes the modified xml files, also the label files ready to be trained on. For training, we included the images chosen to be part of a batch. First seven sequences are used for training, the last two sequences are used for testing, while training.
+
+A pretrained model for descriptor estimation is provided at: [model](http://rocon.utcluj.ro/~levente/download/public/dobb/kitti360_dobb_descriptors_best.pt)
 
 ## Citing
 
@@ -96,6 +117,19 @@ For training the DOBB method, you should run the `script_train_dobb.py` script. 
   series    = {Lecture Notes in Computer Science},
   volume    = {16396},
   doi       = {10.1007/978-3-032-14492-8\_16},
+}
+```
+
+```bibtex
+@Article{amstadt2026mva_dobb_cameraposeestimation,
+  author    = {Zita Amstadt and Szilard Molnar and Levente Tamas and Zoltan Kato},
+  journal = {{Machine Vision and Applications}},
+  title     = {{Camera Pose Estimation from Single Directional Object Detection, Gravity Vector, and Object Correspondences}},
+  year      = {2026},
+  pages     = {1--18},
+  volume    = {},
+  doi       = {},
+  note      = {under review},
 }
 ```
 

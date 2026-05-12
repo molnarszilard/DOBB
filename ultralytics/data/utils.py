@@ -94,7 +94,7 @@ def verify_image(args):
 
 def verify_image_label(args):
     """Verify one image-label pair."""
-    im_file, lb_file, prefix, keypoint, dobb, num_cls, nkpt, ndim = args
+    im_file, lb_file, prefix, keypoint, dobb, num_cls, nkpt, ndim, class_order = args
     # Number (missing, found, empty, corrupt), message, segments, keypoints
     nm, nf, ne, nc, msg, segments, keypoints = 0, 0, 0, 0, "", [], None
     try:
@@ -142,8 +142,8 @@ def verify_image_label(args):
 
                 # All labels
                 max_cls = lb[:, 0].max()  # max label count
-                assert max_cls <= num_cls, (
-                    f"Label class {int(max_cls)} exceeds dataset class count {num_cls}. "
+                assert int(max_cls/class_order) <= num_cls, (
+                    f"Label class {int(max_cls/class_order)} exceeds dataset class count {num_cls}. "
                     f"Possible class labels are 0-{num_cls - 1}"
                 )
                 _, i = np.unique(lb, axis=0, return_index=True)

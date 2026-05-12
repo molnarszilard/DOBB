@@ -147,7 +147,7 @@ class OBB(Detect):
 class DOBB(Detect):
     """YOLOv8 DOBB detection head for detection with rotation models."""
 
-    def __init__(self, nc=80, ne=1, extra_shape=[1,2], dir_type="vector",ch=()):
+    def __init__(self, nc=80, ne=1, extra_shape=[1,2], dir_type="vector", descriptors_size=16,ch=()):
         """Initialize DOBB with number of classes `nc` and layer channels `ch`."""
         super().__init__(nc, ch)
         self.ne = ne #3 #ne  # number of extra parameters
@@ -159,6 +159,10 @@ class DOBB(Detect):
         self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.ne, 1)) for x in ch)
         c5 = max(ch[0] // 4, self.extra_shape)
         self.cv5 = nn.ModuleList(nn.Sequential(Conv(x, c5, 3), Conv(c5, c5, 3), nn.Conv2d(c5, self.extra_shape, 1)) for x in ch)
+        self.descriptors_size = descriptors_size
+        if self.descriptors_size:
+            self.c6 = self.descriptors_size
+            self.cv6 = nn.ModuleList(nn.Sequential(Conv(x, self.c6, 3), Conv(self.c6, self.c6, 3), nn.Conv2d(self.c6, self.c6, 1)) for x in ch)
 
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
@@ -177,18 +181,53 @@ class DOBB(Detect):
             direction_[:,1,:] = (direction_[:,1,:].sigmoid()-0.5)*2
         if direction_.isnan().any():
             print("Head is nan") # Sometimes the model returns NaN during warmup. If this is NaN outside of warmup it is a problem.
+        if self.descriptors_size:
+            descriptors_repeated, descriptors = self.concat_descriptors(x)
         if not self.training:
             self.angleBB = angleBB
             self.direction_ = direction_
         x = self.detect(self, x)
         if self.training:
-            return x, angleBB, direction_
+            if self.descriptors_size:
+                return x, angleBB, direction_, descriptors
+            else:
+                return x, angleBB, direction_
         pred_direction_=direction_
-        return torch.cat([x,angleBB, pred_direction_], 1) if self.export else (torch.cat([x[0], angleBB, pred_direction_], 1), (x[1], angleBB, direction_))
+        if self.descriptors_size:
+            return torch.cat([x,angleBB, pred_direction_,descriptors_repeated], 1) if self.export else (torch.cat([x[0], angleBB, pred_direction_,descriptors_repeated], 1), (x[1], angleBB, direction_, descriptors_repeated))
+        else:
+            return torch.cat([x,angleBB, pred_direction_], 1) if self.export else (torch.cat([x[0], angleBB, pred_direction_], 1), (x[1], angleBB, direction_))
 
     def decode_bboxes(self, bboxes, anchors):
         """Decode rotated bounding boxes."""
         return dist2rbox(bboxes, self.angleBB, anchors, dim=1)
+    
+    def concat_descriptors(self,x):
+        bs = x[0].shape[0]
+        ### Process the descriptors
+        # Read the 3 layers of the descriptors
+        descriptors_layer_0 = self.cv6[0](x[0])
+        descriptors_layer_1 = self.cv6[1](x[1])
+        descriptors_layer_2 = self.cv6[2](x[2])
+        # Get their size, 0 should be the largest, but let's make sure that we know the max size
+        desc_h_0,desc_w_0 = descriptors_layer_0.shape[-2:]
+        desc_h_1,desc_w_1 = descriptors_layer_1.shape[-2:]
+        desc_h_2,desc_w_2 = descriptors_layer_2.shape[-2:]
+        # desc_h = max(desc_h_0,desc_h_1,desc_h_2)
+        # desc_w = max(desc_w_0,desc_w_1,desc_w_2)
+        # Resize the descriptors, so each of them have the same size (maximum), without interpolation, using the nearest value to fill in the gaps
+        descriptors_layer_0 = torch.nn.functional.interpolate(descriptors_layer_0,size=(desc_h_0,desc_w_0),mode='nearest-exact').view(bs, self.c6, -1)
+        descriptors_layer_1 = torch.nn.functional.interpolate(descriptors_layer_1,size=(desc_h_0,desc_w_0),mode='nearest-exact').view(bs, self.c6, -1)
+        descriptors_layer_2 = torch.nn.functional.interpolate(descriptors_layer_2,size=(desc_h_0,desc_w_0),mode='nearest-exact').view(bs, self.c6, -1)
+        # concatenate the descriptor vectors in each anchor grid point, therefore the vector length is 3*self.c6 (e.g., 16*3=48)
+        descriptors = torch.cat([descriptors_layer_0,descriptors_layer_1,descriptors_layer_2], 1)
+        # normalize the vector lengths
+        descriptors = torch.nn.functional.normalize(descriptors,dim=1)
+        # Repeat the descriptor vectors for the cut-off parts (for the lower dimensional layers)
+        descriptors_ds_1 = torch.nn.functional.interpolate(descriptors.view(bs,self.c6*3,desc_h_0,desc_w_0),size=(desc_h_1,desc_w_1),mode='nearest-exact').view(bs, self.c6*3, -1)
+        descriptors_ds_2 = torch.nn.functional.interpolate(descriptors.view(bs,self.c6*3,desc_h_0,desc_w_0),size=(desc_h_2,desc_w_2),mode='nearest-exact').view(bs, self.c6*3, -1)
+        descriptors_repeated = torch.cat([descriptors,descriptors_ds_1,descriptors_ds_2], -1)
+        return descriptors_repeated, descriptors
 
 class Pose(Detect):
     """YOLOv8 Pose head for keypoints models."""

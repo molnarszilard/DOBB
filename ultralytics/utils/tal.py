@@ -36,7 +36,7 @@ class TaskAlignedAssigner(nn.Module):
         self.eps = eps
 
     @torch.no_grad()
-    def forward(self, pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt, gt_directions=None,pred_directions=None):
+    def forward(self, pd_scores, pd_bboxes, anc_points, gt_labels, gt_bboxes, mask_gt, gt_directions=None,pred_directions=None,gt_ids=None,description_mask_real = None):
         """
         Compute the task-aligned assignment. Reference code is available at
         https://github.com/Nioolek/PPYOLOE_pytorch/blob/master/ppyoloe/assigner/tal_assigner.py.
@@ -49,6 +49,9 @@ class TaskAlignedAssigner(nn.Module):
             gt_bboxes (Tensor): shape(bs, n_max_boxes, 4 or 5)
             mask_gt (Tensor): shape(bs, n_max_boxes, 1)
             gt_directions (Tensor): shape(bs, n_max_boxes, 2 or 3)
+            description_mask_real (Tensor): shape(bs, n_max_boxes, 1) - a mask describing which GT annotations to consider, these represent objects, 
+                                                                        that have at least one pair (i.e., they represent the same object on a different image),
+                                                                        preferably an object only occurs exactly 2 times in the batch
 
         Returns:
             target_labels (Tensor): shape(bs, num_total_anchors)
@@ -56,6 +59,8 @@ class TaskAlignedAssigner(nn.Module):
             target_scores (Tensor): shape(bs, num_total_anchors, num_classes)
             fg_mask (Tensor): shape(bs, num_total_anchors)
             target_gt_idx (Tensor): shape(bs, num_total_anchors)
+            description_mask_anchor (Tensor): shape(bs, num_total_anchors) - On the anchor grid, the GT annotations appear multiple times, however, for calculating the descriptors,
+                                                                                only one grid point is required per object. This is a mask, describing which grid point to keep.
         """
         self.bs = pd_scores.shape[0]
         self.n_max_boxes = gt_bboxes.shape[1]
@@ -70,6 +75,8 @@ class TaskAlignedAssigner(nn.Module):
                     torch.zeros_like(pd_scores[..., 0]).to(device),
                     torch.zeros_like(pd_scores[..., 0]).to(device),
                     torch.zeros_like(pred_directions).to(device),
+                    torch.zeros_like(pd_scores[:,:,0:1]).to(device),
+                    torch.zeros_like(pd_scores[..., 0]).to(device),
                 )
             return (
                 torch.full_like(pd_scores[..., 0], self.bg_idx).to(device),
@@ -79,6 +86,7 @@ class TaskAlignedAssigner(nn.Module):
                 torch.zeros_like(pd_scores[..., 0]).to(device),
             )
 
+        subset_anchors = int(pd_scores.shape[1]/21*16)
         mask_pos, align_metric, overlaps = self.get_pos_mask(
             pd_scores, pd_bboxes, gt_labels, gt_bboxes, anc_points, mask_gt
         )
@@ -87,7 +95,7 @@ class TaskAlignedAssigner(nn.Module):
 
         # Assigned target
         if gt_directions is not None:
-            target_labels, target_bboxes, target_scores, target_directions = self.get_targets(gt_labels, gt_bboxes, target_gt_idx, fg_mask, gt_directions)
+            target_labels, target_bboxes, target_scores, target_directions, target_ids = self.get_targets(gt_labels, gt_bboxes, target_gt_idx, fg_mask, gt_directions, gt_ids)
         else:
             target_labels, target_bboxes, target_scores = self.get_targets(gt_labels, gt_bboxes, target_gt_idx, fg_mask)
 
@@ -97,8 +105,57 @@ class TaskAlignedAssigner(nn.Module):
         pos_overlaps = (overlaps * mask_pos).amax(dim=-1, keepdim=True)  # b, max_num_obj
         norm_align_metric = (align_metric * pos_overlaps / (pos_align_metrics + self.eps)).amax(-2).unsqueeze(-1)
         target_scores = target_scores * norm_align_metric
+
         if gt_directions is not None:
-            return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx, target_directions
+            if description_mask_real is None:
+                return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx, target_directions, None, None
+
+            description_mask_anchor = fg_mask[:,:subset_anchors] != fg_mask[:,:subset_anchors]
+            
+            _, _, overlaps_desc = self.get_pos_mask(
+                pd_scores[:,:subset_anchors,:], pd_bboxes[:,:subset_anchors,:], gt_labels, gt_bboxes, anc_points[:subset_anchors,:], mask_gt*description_mask_real
+            )
+
+            target_scores_mask = (target_scores>0).sum(dim=-1).bool()
+            overlaps_desc[target_scores_mask.unsqueeze(dim=1).repeat(1,overlaps_desc.shape[1],1)[:,:,:subset_anchors]!=True] = 0
+
+            target_ids[target_scores_mask!=True]=0
+            target_ids = target_ids[:,:subset_anchors,:]
+            u_ids, c_ids = torch.unique(target_ids[:,:subset_anchors,:], return_counts=True)
+            u_ids = u_ids[c_ids>1]
+            if u_ids[0] == 0:
+                u_ids = u_ids[1:]
+            for i_ids in range(len(u_ids)):
+                temp_mask_gt = gt_ids.squeeze(dim=-1)==u_ids[i_ids]
+                temp_mask_target = target_ids.squeeze(dim=-1)[:,:subset_anchors]==u_ids[i_ids]
+                if len(temp_mask_gt.nonzero()>0):
+                    images_list = temp_mask_gt.nonzero()[:,0]
+                    for i_i in range(len(images_list)):
+                        if temp_mask_target[images_list[i_i]].sum()==0:
+                            target_ids[temp_mask_target] = 0
+                            continue
+                else:
+                    target_ids[temp_mask_target] = 0
+                    continue
+
+            mask_pos_unique_desc = torch.zeros_like(gt_ids.squeeze(dim=-1))
+            for i_b in range(gt_ids.shape[0]):
+                for i_o in range(gt_ids.shape[1]):
+                    if gt_ids.squeeze(dim=-1)[i_b,i_o]==0:
+                        overlaps_desc[i_b,i_o,:]=0
+                        continue
+                    if (target_ids.squeeze(dim=-1)[:,:subset_anchors]==gt_ids[i_b,i_o,0]).sum()<2 or (target_ids.squeeze(dim=-1)[i_b,:subset_anchors]==gt_ids[i_b,i_o,0]).sum()<1:
+                        overlaps_desc[i_b,i_o,:]=0
+                        continue
+                    overlaps_desc[i_b,i_o,(target_ids.squeeze(dim=-1)[i_b,:subset_anchors]==gt_ids[i_b,i_o,0])!=True] = 0
+                    index_max = torch.argmax(overlaps_desc[i_b,i_o])
+                    mask_pos_unique_desc[i_b,i_o] = index_max
+                    description_mask_anchor[i_b,index_max] = True
+                    overlaps_desc[:,:,index_max] = 0
+
+            description_mask_anchor *= target_scores_mask[:,:subset_anchors]
+            target_ids[:,:subset_anchors,0][description_mask_anchor!=True] = 0
+            return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx, target_directions, target_ids, description_mask_anchor
         else:
             return target_labels, target_bboxes, target_scores, fg_mask.bool(), target_gt_idx
 
@@ -175,7 +232,7 @@ class TaskAlignedAssigner(nn.Module):
 
         return count_tensor.to(metrics.dtype)
 
-    def get_targets(self, gt_labels, gt_bboxes, target_gt_idx, fg_mask, gt_directions=None):
+    def get_targets(self, gt_labels, gt_bboxes, target_gt_idx, fg_mask, gt_directions=None, gt_ids=None):
         """
         Compute target labels, target bounding boxes, and target scores for the positive anchor points.
 
@@ -189,6 +246,7 @@ class TaskAlignedAssigner(nn.Module):
             fg_mask (Tensor): A boolean tensor of shape (b, h*w) indicating the positive
                               (foreground) anchor points.
             gt_directions (Tensor): Optional ground truth direction point coordinates (b, max_num_obj, 2 or 3 - for visibility).
+            gt_ids (Tensor): shape(bs, n_max_boxes, 1)
 
         Returns:
             (Tuple[Tensor, Tensor, Tensor]): A tuple containing the following tensors:
@@ -201,6 +259,7 @@ class TaskAlignedAssigner(nn.Module):
                                           of object classes.
                 - target_directions (Tensor): Shape (b, h*w, 2 or 3), containing the target direction points
                                           for positive anchor points.
+                - target_ids (Tensor): shape(bs, num_total_anchors)
         """
 
         # Assigned target labels, (b, 1)
@@ -227,7 +286,10 @@ class TaskAlignedAssigner(nn.Module):
         target_scores = torch.where(fg_scores_mask > 0, target_scores, 0)
         if gt_directions is not None:
             target_directions = gt_directions.view(-1, gt_directions.shape[-1])[target_gt_idx]
-            return target_labels, target_bboxes, target_scores, target_directions
+            target_ids = None
+            if gt_ids is not None:
+                target_ids = gt_ids.view(-1, gt_ids.shape[-1])[target_gt_idx]
+            return target_labels, target_bboxes, target_scores, target_directions, target_ids
         else:
             return target_labels, target_bboxes, target_scores
 

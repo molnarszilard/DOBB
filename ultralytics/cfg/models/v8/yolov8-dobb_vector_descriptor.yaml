@@ -44,4 +44,4 @@ head:
   - [[-1, 9], 1, Concat, [1]] # cat head P5
   - [-1, 3, C2f, [1024]] # 21 (P5/32-large)
 
-  - [[15, 18, 21], 1, DOBB, [nc,1,[1,2],vector,0]] # DOBB(P3, P4, P5) # [number of channels, number of extra parameter for OBB angle, number of extra parameter for direction, direction type]
+  - [[15, 18, 21], 1, DOBB, [nc,1,[1,2],vector,16]] # DOBB(P3, P4, P5) # [number of channels, number of extra parameter for OBB angle, number of extra parameter for direction, direction type, descriptor length]

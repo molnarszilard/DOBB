@@ -32,7 +32,7 @@ class YOLODataset(BaseDataset):
         (torch.utils.data.Dataset): A PyTorch dataset object that can be used for training an object detection model.
     """
 
-    def __init__(self, *args, data=None, task="detect", **kwargs):
+    def __init__(self, *args, data=None, task="detect", list_batches=False, mode = "train", **kwargs):
         """Initializes the YOLODataset with optional configurations for segments and keypoints."""
         self.use_segments = task == "segment"
         self.use_keypoints = task == "pose" or task == "dobb"
@@ -40,6 +40,8 @@ class YOLODataset(BaseDataset):
         self.use_dobb = task == "dobb"
         self.data = data
         self.hyp=kwargs['hyp']
+        self.list_batches = list_batches
+        self.mode=mode
         # assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
         super().__init__(*args, **kwargs)
 
@@ -76,6 +78,7 @@ class YOLODataset(BaseDataset):
                     repeat(len(self.data["names"])),
                     repeat(nkpt),
                     repeat(ndim),
+                    repeat(self.hyp.class_order),
                 ),
             )
             pbar = TQDM(results, desc=desc, total=total)

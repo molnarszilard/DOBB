@@ -24,6 +24,7 @@ from ultralytics.utils import RANK, colorstr
 from ultralytics.utils.checks import check_file
 from .dataset import YOLODataset
 from .utils import PIN_MEMORY
+from torch.utils.data.sampler import Sampler
 
 
 class InfiniteDataLoader(dataloader.DataLoader):
@@ -35,6 +36,14 @@ class InfiniteDataLoader(dataloader.DataLoader):
 
     def __init__(self, *args, **kwargs):
         """Dataloader that infinitely recycles workers, inherits from DataLoader."""
+        if kwargs['dataset'].hyp.list_batches is not None:
+            if kwargs['dataset'].hyp.list_batches:
+                sampler = dataloader.SequentialSampler(kwargs['dataset'])
+                kwargs['batch_sampler'] = ListBasedSampler(sampler, kwargs['batch_size'],dataset=kwargs['dataset'])
+                if 'shuffle' in kwargs.keys():
+                    kwargs.pop('shuffle')
+                if 'batch_size' in kwargs.keys():
+                    kwargs.pop('batch_size')
         super().__init__(*args, **kwargs)
         object.__setattr__(self, "batch_sampler", _RepeatSampler(self.batch_sampler))
         self.iterator = super().__iter__()
@@ -100,6 +109,8 @@ def build_yolo_dataset(cfg, img_path, batch, data, mode="train", rect=False, str
         classes=cfg.classes,
         data=data,
         fraction=cfg.fraction if mode == "train" else 1.0,
+        list_batches = cfg.list_batches,
+        mode=mode,
     )
 
 
@@ -183,3 +194,75 @@ def load_inference_source(source=None, vid_stride=1, buffer=False):
     setattr(dataset, "source_type", source_type)
 
     return dataset
+
+
+from typing import TypeVar, Iterator, Iterable, Union, List
+
+T_co = TypeVar('T_co', covariant=True)
+
+class ListBasedSampler(Sampler[T_co]):
+    r"""Sampler that reads a list of frames, and creates the batches in order of them
+    Args:
+        sampler (Sampler or Iterable): Base sampler. Can be any iterable object
+        batch_size (int): Size of mini-batch.
+        drop_last (bool): If ``True``, the sampler will drop the last batch if
+            its size would be less than ``batch_size``
+    """
+
+    def __init__(self, sampler: Union[Sampler[int], Iterable[int]], batch_size: int, dataset=None) -> None:
+        # Since collections.abc.Iterable does not check for `__getitem__`, which
+        # is one way for an object to be an iterable, we don't do an `isinstance`
+        # check here.
+        if not isinstance(batch_size, int) or isinstance(batch_size, bool) or \
+                batch_size <= 0:
+            raise ValueError("batch_size should be a positive integer value, "
+                             "but got batch_size={}".format(batch_size))
+        self.sampler = sampler
+        self.batch_size = batch_size
+        self.dataset = dataset
+        self.data_names = []
+        self.data = []
+        if not dataset is None:
+            if sampler.data_source.mode == "train":
+                data_path = os.path.join(str(dataset.data['path']),"used_images_train.txt")
+            else:
+                data_path = os.path.join(str(dataset.data['path']),"used_images_test.txt")
+            
+            all_im_names = sampler.data_source.im_files
+            all_im_names = np.asarray(all_im_names)
+
+            if os.path.exists(data_path):
+                f_label = open(data_path, "r")
+                Lines_yolo = f_label.readlines()
+                f_label.close()
+                
+                for line in Lines_yolo:
+                    current_line = line[:-1]
+                    idx = (np.where(all_im_names == os.path.join(sampler.data_source.data[sampler.data_source.mode],current_line.split(" ")[0])))[0][0]
+                    self.data.append(idx)
+            else:
+                print("Warning batch file %s is not found. Alphabetical order will be carried out."%(data_path))
+                self.data = list(range(len(all_im_names)))
+            self.data = np.asarray(self.data)
+            
+
+    def __iter__(self) -> Iterator[List[int]]:
+        # Implemented based on the benchmarking in https://github.com/pytorch/pytorch/pull/76951
+        batch = [0] * self.batch_size
+        idx_in_batch = 0
+        for i, idx in enumerate(self.data):
+            batch[idx_in_batch] = idx
+            idx_in_batch += 1
+            if idx_in_batch == self.batch_size:
+                yield batch
+                idx_in_batch = 0
+                batch = [0] * self.batch_size
+        if idx_in_batch > 0:
+            yield batch[:idx_in_batch]
+
+    def __len__(self) -> int:
+        # Can only be called if self.sampler has __len__ implemented
+        # We cannot enforce this condition, so we turn off typechecking for the
+        # implementation below.
+        # Somewhat related: see NOTE [ Lack of Default `__len__` in Python Abstract Base Classes ]
+        return (len(self.sampler) + self.batch_size - 1) // self.batch_size  # type: ignore[arg-type]

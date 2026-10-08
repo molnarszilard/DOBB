@@ -46,7 +46,11 @@ Do not forget to have the required `yaml` file for your dataset (e.g., [config f
 
 ## Environment setup for DOBBp1
 
-We recommend to use a conda environment for this code. Most necessary packages are in the `requirements.txt` file. Make sure NOT to install ultralytics from pip, as this repository contains direct modifications into that code, and installing it would create a confusing environment.
+We recommend to use a conda environment for this code. Most necessary packages are in the `requirements.txt` file (tested with python 3.8.10). Make sure NOT to install ultralytics from pip, as this repository contains direct modifications into that code, and installing it would create a confusing environment. Install Pytorch separately:
+
+```bash
+pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu116
+```
 
 For pre/postprocessing of the 7-Scenes Chess dataset you need to additionally install the [**pyellcv**](https://gitlab.inria.fr/tangram/pyellcv) library for ellipses/ellipsoids manipulation and pose computation.
 

@@ -8,6 +8,7 @@ import argparse
 import csv
 import utils
 import re
+import pandas as pd
 
 np.set_printoptions(suppress=True, precision=6)
 
@@ -43,27 +44,28 @@ train_nr = [int(s) for s in re.findall(r'\d+',args.labels)][0]
 images='all_for_val/images/test'
 csv_labels_folder=os.path.join(args.cameraID,args.csv_labels_folder)
 
-
-minimum_dotp = 0
-maximum_dist = 1
-all_descriptors = []
-all_pred_classes = []
-nr_gt_annotations = 0
-nr_matched_obbs = 0
-nr_no_matches = 0
-nr_pred_inEval = 0
-frames_selected = 0
-nr_of_images = 0
-
 for i_seq in range(len(sequences)):
     seq_number = sequences[i_seq]
     ### Reading instances masks
     csv_labels=[]
     dlist=os.listdir(os.path.join(args.folder,'2013_05_28_drive_'+f'{seq_number:04d}'+'_sync',csv_labels_folder))
     dlist.sort()
-    nr_of_images+=len(dlist)
     predictions = {}
     matched_ids_all = {}
+    minimum_dotp = 0
+    maximum_dist = 1
+    all_pred_classes = []
+    nr_gt_annotations = 0
+    nr_pred_annotations = 0
+    nr_no_matches = 0
+    nr_pred_inEval = 0
+    frames_selected = 0
+    nr_of_images = 0
+    nr_ts_matched = 0
+    nr_car_matched = 0
+    nr_matched_obbs = 0
+    nr_of_images+=len(dlist)
+    
     for filename in dlist:
         if filename.endswith(".csv"):
             csv_labels.append(filename)
@@ -78,13 +80,21 @@ for i_seq in range(len(sequences)):
             label_path = os.path.join(args.folder,args.labels,filename[:-3]+'txt')
 
             frame = int([int(s) for s in re.findall(r'\d+',filename)][-1])
-            print("Reading: Seq: %d, Frame: %d"%(seq_number,frame))
+            # print("Reading: Seq: %d, Frame: %d"%(seq_number,frame))
+            utils.progress(dlist.index(filename),len(dlist), "Seq: %d, Frame: %d"%(seq_number,frame))
             ellipse_csv = []
             this_unique_ids = []
             pred_classes = []
             pred_descriptors = []
             matched_ids = []
-            ### Read the GT CSV files
+            ## Verify that everything exists
+            # if not os.path.isfile(gt_csv_path):
+            #     print("GT Label file does not exists: %s"%(gt_csv_path))
+            # if not os.path.isfile(img_path):
+            #     print("Image file does not exists: %s"%(img_path))
+            # if not os.path.isfile(label_path):
+            #     print("Pred label file does not exists: %s"%(label_path))
+            ## Read the GT CSV files
             with open(gt_csv_path, newline='') as csvfile:
                 csvreader = csv.reader(csvfile, delimiter=';', quotechar='|')
                 counter = -1
@@ -149,7 +159,7 @@ for i_seq in range(len(sequences)):
                         rect_pred_xywhr = ((rect_pred_xywhr[0][0],rect_pred_xywhr[0][1]),(rect_pred_xywhr[1][1],rect_pred_xywhr[1][0]),rect_pred_xywhr[2]+90) # +90 is because minRectArea stuff
                     label_array.append([elements[0],rect_pred_xywhr[0][0],rect_pred_xywhr[0][1],rect_pred_xywhr[1][0],rect_pred_xywhr[1][1],rect_pred_xywhr[2],elements[9],elements[10]])
                     pred_descriptors.append(elements[11:])
-                    all_descriptors.append(elements[11:])
+                    nr_pred_annotations+=1
                     pred_classes.append(elements[0])
                 label_array=np.asarray(label_array)
                 pred_classes=np.asarray(pred_classes)
@@ -160,8 +170,8 @@ for i_seq in range(len(sequences)):
                 
                 ### Find matching prediction with the reference annotations
                 IOUs = np.zeros((len(ellipse_csv),len(label_array)))
-                for Ri in range(len(ellipse_csv)):
-                    for Pi in range(len(label_array)):
+                for Ri in range(len(ellipse_csv)): # GT annotations
+                    for Pi in range(len(label_array)): # Predictions
                         if ellipse_csv[Ri][0]==label_array[Pi][0]:
                             center = (label_array[Pi][1],label_array[Pi][2])
                             size = (label_array[Pi][3],label_array[Pi][4])
@@ -232,13 +242,18 @@ for i_seq in range(len(sequences)):
     pred_descriptors = np.asarray(pred_descriptors).reshape(-1,48)
     pred_classes = np.asarray(pred_classes).reshape(-1)
     matched_ids = np.asarray(matched_ids).reshape(-1)
-    nr_pred_inEval +=len(pred_descriptors)
+    nr_pred_inEval +=len(matched_ids)
+    nr_ts_matched=(pred_classes==1).sum()
+    nr_car_matched=(pred_classes==0).sum()
 
     pred_classes_matrix = np.repeat(np.expand_dims(pred_classes,0),len(pred_classes),axis=0)
     class_mask = pred_classes_matrix!=pred_classes_matrix.T
     matched_ids_matrix = np.repeat(np.expand_dims(matched_ids,0),len(matched_ids),axis=0)
     matched_ids_mask = matched_ids_matrix==matched_ids_matrix.T
     matched_ids_mask[np.eye(len(matched_ids_mask))>0]=False
+    matched_ids_mask[matched_ids_matrix<0]=False
+    matched_ids_mask_car = np.logical_and(matched_ids_mask, np.logical_and(matched_ids_matrix>0, matched_ids_matrix<N))
+    matched_ids_mask_ts = np.logical_and(matched_ids_mask, matched_ids_matrix>=N)
     descriptors_products = abs(np.dot(pred_descriptors,pred_descriptors.T))
 
     descriptors_products[np.eye(len(pred_descriptors))>0]=minimum_dotp
@@ -247,6 +262,8 @@ for i_seq in range(len(sequences)):
 
     ### Calculate top10 list, by dot product
     top10_distributions = np.zeros(10)
+    top10_distributions_car = np.zeros(10)
+    top10_distributions_ts = np.zeros(10)
     descriptors_products_best = descriptors_products.copy()
     for i10 in range(10):
         best_args = np.zeros((2,len(descriptors_products_best)))
@@ -254,14 +271,27 @@ for i_seq in range(len(sequences)):
         best_args[1,:] = np.argmax(descriptors_products_best, axis=-1)
         best_args = best_args.astype(np.int32)
         top10_distributions[i10] = matched_ids_mask[best_args[0,:],best_args[1,:]].sum()
+        top10_distributions_car[i10] = matched_ids_mask_car[best_args[0,:],best_args[1,:]].sum()
+        top10_distributions_ts[i10] = matched_ids_mask_ts[best_args[0,:],best_args[1,:]].sum()
         descriptors_products_best[best_args[0,:],best_args[1,:]] = minimum_dotp
 
-print("Total number of frames: %d"%(nr_of_images))  
-print("Total number of GT objects: %d"%(nr_gt_annotations))
-print("Total number of predicted objects: %d"%(len(all_descriptors)))
-print("Number of matches by OBB: %d (considering by selection %d)"%(nr_matched_obbs,nr_pred_inEval))
-print("Selected frames: %d"%(frames_selected))
+    print("\n")
+    print("Total number of frames: %d"%(nr_of_images))  
+    print("Total number of GT objects: %d"%(nr_gt_annotations))
+    print("Total number of predicted objects: %d"%(nr_pred_annotations))
+    print("Number of matches by OBB: %d (from which %d were predefined by the list)"%(nr_matched_obbs,nr_pred_inEval))
+    print("Selected frames: %d"%(frames_selected))
+    print("Nr of cars matched: %d"%(nr_car_matched))
+    print("Nr of trafficSigns matched: %d"%(nr_ts_matched))
 
-print("Top 10 matching only by ID: ")
-print(top10_distributions)
-print(top10_distributions.sum())
+    print("Top 10 matching only by ID: ")
+    print(top10_distributions)
+    print(top10_distributions.sum())
+
+    print("Top 10 matching only by ID (only cars): ")
+    print(top10_distributions_car)
+    print(top10_distributions_car.sum())
+
+    print("Top 10 matching only by ID (only traffic signs): ")
+    print(top10_distributions_ts)
+    print(top10_distributions_ts.sum())

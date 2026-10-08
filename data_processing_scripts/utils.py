@@ -1032,3 +1032,13 @@ def force_square_bbox(bbox, margin=0):
 def create_if_needed(folder):
     if not os.path.isdir(folder):
         os.makedirs(folder)
+
+def progress(count, total, suffix=''):
+    bar_len = 40
+    filled_len = int(round(bar_len * count / float(total)))
+
+    percents = round(100.0 * count / float(total), 1)
+    bar = '=' * filled_len + '-' * (bar_len - filled_len)
+
+    sys.stdout.write('[%s] %s%s --- %s/%s %s\r' % (bar, percents, '%', str(total), str(count), suffix))
+    sys.stdout.flush()
